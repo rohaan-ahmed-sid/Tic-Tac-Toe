@@ -11,7 +11,7 @@ screen_width = min(display_info.current_w - 100, 1024)
 screen_height = min(display_info.current_h - 100, 768)
 size = width, height = screen_width, screen_height
 
-# --- Colors (updated for vibrancy and contrast) ---
+# --- Colors ---
 background_top = (10, 10, 70)         # Deep vivid blue
 background_bottom = (0, 220, 255)     # Bright cyan
 
@@ -30,7 +30,6 @@ win_line_color = (255, 255, 0)         # Bright yellow winning line
 triangle_color = (255, 69, 0)          # Orange-red triangle (user shape)
 diamond_color = (0, 255, 255)          # Bright cyan diamond (AI shape)
 
-
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Tic-Tac-Toe Modern Vibrant")
 
@@ -40,25 +39,35 @@ medium_font_size = int(height * 0.06)
 smallFont = pygame.font.SysFont("Segoe UI", small_font_size)
 mediumFont = pygame.font.SysFont("Segoe UI", medium_font_size)
 
-# User/game state variables
+# --- Game state variables ---
 user_name = ""
 input_active = True
 input_rect = pygame.Rect(width / 2 - 180, height * 0.35, 360, 50)
 
 difficulty = None
-user = ttt.X
-ai = ttt.O
 player_shape_triangle = True
+
+def update_user_ai_symbols():
+    global user, ai
+    if player_shape_triangle:
+        user = ttt.X
+        ai = ttt.O
+    else:
+        user = ttt.O
+        ai = ttt.X
+
+update_user_ai_symbols()
 
 board = ttt.initial_state()
 ai_turn = False
 animation_progress = 0
 winning_line = None
 winner_player = None
+result_counted = False  # <--- Add this flag
 
 player_wins = 0
 ai_wins = 0
-ties = 0
+ties_count = 0
 
 cursor_visible = True
 cursor_timer = 0
@@ -67,6 +76,18 @@ settings_open = False
 
 clock = pygame.time.Clock()
 
+def reset_game_state():
+    global board, ai_turn, animation_progress, winning_line, winner_player, difficulty, settings_open, result_counted
+    board = ttt.initial_state()
+    ai_turn = False
+    animation_progress = 0
+    winning_line = None
+    winner_player = None
+    difficulty = None
+    settings_open = False
+    result_counted = False  # Reset the flag when game restarts
+
+# --- Helper draw functions ---
 def draw_particles(surface):
     for _ in range(100):
         x = random.randint(0, width)
@@ -88,14 +109,11 @@ def draw_shadow(surface, rect, radius=15, offset=(5,5), shadow_color=(0,0,0,80))
 def draw_button(surface, rect, text, font, base_color, hover, active):
     shadow_col = (0,0,0,120) if not active else (0,0,0,180)
     draw_shadow(surface, rect, radius=rect.height//2, offset=(4,4), shadow_color=shadow_col)
-
     color = tuple(min(c + 50, 255) for c in base_color) if hover else base_color
     draw_rounded_rect(surface, rect, color, radius=rect.height//2)
-
     text_surf = font.render(text, True, (0,0,0,150))
     text_rect = text_surf.get_rect(center=(rect.centerx + 1, rect.centery + 1))
     surface.blit(text_surf, text_rect)
-
     text_surf = font.render(text, True, button_text)
     text_rect = text_surf.get_rect(center=rect.center)
     surface.blit(text_surf, text_rect)
@@ -163,7 +181,7 @@ def draw_move(surface, rect, move):
     else:
         draw_diamond(surface, rect, diamond_color)
 
-def draw_scorecard(surface, player_name, player_wins, ai_wins, ties):
+def draw_scorecard(surface, player_name, player_wins, ai_wins, ties_count):
     padding = 15
     rect_height = height * 0.1
     rect = pygame.Rect(padding, padding, width - 2 * padding, rect_height)
@@ -180,7 +198,7 @@ def draw_scorecard(surface, player_name, player_wins, ai_wins, ties):
     gap = (width - 2 * padding) // 3
     draw_shadowed_text(f"{player_name}'s Wins: {player_wins}", (padding + 20, padding + rect_height // 3))
     draw_shadowed_text(f"AI Wins: {ai_wins}", (padding + gap + 20, padding + rect_height // 3))
-    draw_shadowed_text(f"Ties: {ties}", (padding + 2 * gap + 20, padding + rect_height // 3))
+    draw_shadowed_text(f"Ties: {ties_count}", (padding + 2 * gap + 20, padding + rect_height // 3))
 
 def truncate_text(font, text, max_width):
     if font.size(text)[0] <= max_width:
@@ -194,7 +212,7 @@ def truncate_text(font, text, max_width):
         max_len -= 1
     return ellipsis
 
-# --- Main loop ---
+# --- Main game loop ---
 while True:
     dt = clock.tick(60) / 1000
     cursor_timer += dt
@@ -222,21 +240,20 @@ while True:
                     user_name += event.unicode
 
         if not input_active and event.type == pygame.MOUSEBUTTONDOWN:
+            # Settings shape selection buttons
             if settings_open:
                 tri_btn = pygame.Rect(width/2 - 220, height*0.6, 180, 50)
                 dia_btn = pygame.Rect(width/2 + 40, height*0.6, 180, 50)
                 if tri_btn.collidepoint(mouse_pos):
                     player_shape_triangle = True
-                    user = ttt.X
-                    ai = ttt.O
-                    settings_open = False
+                    update_user_ai_symbols()
+                    reset_game_state()
                 elif dia_btn.collidepoint(mouse_pos):
                     player_shape_triangle = False
-                    user = ttt.O
-                    ai = ttt.X
-                    settings_open = False
+                    update_user_ai_symbols()
+                    reset_game_state()
 
-    # --- Draw Background ---
+    # --- Draw background gradient ---
     for y in range(height):
         ratio = y / height
         r = int(background_top[0]*(1-ratio) + background_bottom[0]*ratio)
@@ -249,10 +266,11 @@ while True:
     display_name = user_name if user_name else "Player"
     max_score_name_width = width - 160
     display_name = truncate_text(smallFont, display_name, max_score_name_width)
-    draw_scorecard(screen, display_name, player_wins, ai_wins, ties)
+    draw_scorecard(screen, display_name, player_wins, ai_wins, ties_count)
 
     # --- UI States ---
     if input_active:
+        # Name input UI
         prompt = mediumFont.render("Enter your name:", True, text_color)
         prompt_rect = prompt.get_rect(center=(width/2, height*0.25))
         screen.blit(prompt, prompt_rect)
@@ -276,6 +294,7 @@ while True:
                 pygame.draw.rect(screen, text_color, (cursor_x, cursor_y, 2, cursor_h))
 
     elif settings_open:
+        # Settings UI - choose shape
         header = mediumFont.render("Choose your shape:", True, text_color)
         header_rect = header.get_rect(center=(width/2, height*0.5))
         screen.blit(header, header_rect)
@@ -288,6 +307,7 @@ while True:
 
     else:
         if difficulty is None:
+            # Difficulty selection UI
             prompt = mediumFont.render(f"Welcome {user_name}, select challenge level:", True, text_color)
             prompt_rect = prompt.get_rect(center=(width/2, height*0.25))
             screen.blit(prompt, prompt_rect)
@@ -325,169 +345,169 @@ while True:
                     settings_open = True
 
         else:
-            # Game board + shape select buttons + logic
-            if not settings_open:
-                diff_text = smallFont.render(f"Challenge Level: {difficulty.capitalize()}", True, text_color)
-                diff_rect = diff_text.get_rect(center=(width/2, height*0.4))
-                screen.blit(diff_text, diff_rect)
+            # Show difficulty label
+            diff_text = smallFont.render(f"Challenge Level: {difficulty.capitalize()}", True, text_color)
+            diff_rect = diff_text.get_rect(center=(width/2, height*0.4))
+            screen.blit(diff_text, diff_rect)
+
+            button_width = width / 4
+            button_height = height * 0.07
+            button_y = height * 0.5
+
+            playTriangleButton = pygame.Rect(width / 8, button_y, button_width, button_height)
+            playDiamondButton = pygame.Rect(5 * width / 8, button_y, button_width, button_height)
+
+            hover_t = playTriangleButton.collidepoint(mouse_pos)
+            hover_d = playDiamondButton.collidepoint(mouse_pos)
+
+            # Shape change buttons during game
+            if click == 1:
+                if playTriangleButton.collidepoint(mouse_pos) and not player_shape_triangle:
+                    player_shape_triangle = True
+                    update_user_ai_symbols()
+                    reset_game_state()
+                elif playDiamondButton.collidepoint(mouse_pos) and player_shape_triangle:
+                    player_shape_triangle = False
+                    update_user_ai_symbols()
+                    reset_game_state()
+
+            # Board drawing
+            grid_size = 4
+            available_space = min(width * 0.8, height * 0.7)
+            tile_size = available_space / grid_size
+
+            board_width = tile_size * grid_size
+            board_height = tile_size * grid_size
+            board_left = (width - board_width) / 2
+            board_top = (height - board_height) / 2 + height * 0.05
+
+            tile_origin = (board_left, board_top)
+
+            tiles = []
+            for i in range(grid_size):
+                row = []
+                for j in range(grid_size):
+                    rect = pygame.Rect(tile_origin[0] + j * tile_size, tile_origin[1] + i * tile_size,
+                                       tile_size, tile_size)
+
+                    grad_surf = pygame.Surface((rect.width, rect.height))
+                    for y in range(rect.height):
+                        grad = int(255 - (y / rect.height) * 20)
+                        pygame.draw.line(grad_surf, (grad, grad, grad), (0, y), (rect.width, y))
+                    grad_surf.set_alpha(230)
+                    screen.blit(grad_surf, rect.topleft)
+
+                    pygame.draw.rect(screen, tile_border_color, rect, 3, border_radius=12)
+                    inner_shadow = pygame.Rect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8)
+                    pygame.draw.rect(screen, tile_inner_shadow, inner_shadow, 2, border_radius=12)
+
+                    if board[i][j] != ttt.EMPTY:
+                        draw_move(screen, rect, board[i][j])
+
+                    row.append(rect)
+                tiles.append(row)
+
+            game_over = ttt.terminal(board)
+            player_turn = ttt.player(board)
+
+            # Draw top panel for status
+            panel_height = height * 0.15
+            panel_rect = pygame.Rect(0, 0, width, panel_height)
+            draw_shadow(screen, panel_rect, radius=15, offset=(5, 5), shadow_color=(0, 0, 0, 70))
+            draw_rounded_rect(screen, panel_rect, panel_color, radius=15)
+            pygame.draw.line(screen, tile_border_color, (0, panel_height), (width, panel_height), 2)
+
+            if game_over and not result_counted:
+                winner_symbol = ttt.winner(board)
+                winning_line = get_winning_line(board)
+                if winner_symbol == user:
+                    winner_player = user_name
+                    player_wins += 1
+                elif winner_symbol is not None:
+                    winner_player = "AI"
+                    ai_wins += 1
+                else:
+                    winner_player = None
+                    ties_count += 1
+                result_counted = True
+
+            # Status text
+            if game_over:
+                status_text = "It's a Tie!" if winner_player is None else f"{winner_player} Wins!"
+            elif user == player_turn:
+                status_text = f"{user_name}, it's your move!"
+            else:
+                status_text = "AI is thinking..."
+
+            status_shadow = mediumFont.render(status_text, True, (0, 0, 0, 150))
+            status_rect = status_shadow.get_rect(center=(width / 2 + 2, panel_height / 2 - 8))
+            screen.blit(status_shadow, status_rect)
+
+            status_render = mediumFont.render(status_text, True, text_color)
+            status_rect = status_render.get_rect(center=(width / 2, panel_height / 2 - 10))
+            screen.blit(status_render, status_rect)
+
+            # Draw winning line animation
+            if winning_line is not None:
+                if animation_progress < 1:
+                    animation_progress += 0.05
+                draw_winning_line(screen, winning_line[0], winning_line[1], tiles, animation_progress)
+
+            # AI logic
+            if user != player_turn and not game_over:
+                if ai_turn:
+                    time.sleep(0.5)
+                    move = ttt.minimax(board, difficulty, maximizing_player=ai)
+                    if move is not None:
+                        board = ttt.result(board, move)
+                    ai_turn = False
+                else:
+                    ai_turn = True
+
+            # Player move
+            if click == 1 and user == player_turn and not game_over:
+                mouse = pygame.mouse.get_pos()
+                for i in range(grid_size):
+                    for j in range(grid_size):
+                        if board[i][j] == ttt.EMPTY and tiles[i][j].collidepoint(mouse):
+                            board = ttt.result(board, (i, j))
+                            ai_turn = False
+
+            # Game over panel with Play Again and Exit buttons
+            if game_over:
+                panel_bottom_height = height * 0.15
+                panel_bottom_rect = pygame.Rect(0, height - panel_bottom_height, width, panel_bottom_height)
+                draw_shadow(screen, panel_bottom_rect, radius=15, offset=(5, 5), shadow_color=(0, 0, 0, 70))
+                draw_rounded_rect(screen, panel_bottom_rect, panel_color, radius=15)
+                pygame.draw.line(screen, tile_border_color, (0, height - panel_bottom_height), (width, height - panel_bottom_height), 2)
 
                 button_width = width / 4
                 button_height = height * 0.07
-                button_y = height * 0.5
+                button_y = height - panel_bottom_height / 2 - button_height / 2
 
-                playTriangleButton = pygame.Rect(width / 8, button_y, button_width, button_height)
-                playDiamondButton = pygame.Rect(5 * width / 8, button_y, button_width, button_height)
+                againButton = pygame.Rect(width / 5, button_y, button_width, button_height)
+                hover_retry = againButton.collidepoint(mouse_pos)
+                draw_button(screen, againButton, "Play Again", mediumFont, button_base, hover_retry, False)
 
-                hover_t = playTriangleButton.collidepoint(mouse_pos)
-                hover_d = playDiamondButton.collidepoint(mouse_pos)
+                quitButton = pygame.Rect(3 * (width / 5), button_y, button_width, button_height)
+                hover_quit = quitButton.collidepoint(mouse_pos)
+                draw_button(screen, quitButton, "Exit", mediumFont, button_base, hover_quit, False)
 
                 if click == 1:
-                    if playTriangleButton.collidepoint(mouse_pos):
+                    if againButton.collidepoint(mouse_pos):
                         time.sleep(0.25)
-                        user = ttt.X
-                        ai = ttt.O
-                        player_shape_triangle = True
-                    elif playDiamondButton.collidepoint(mouse_pos):
-                        time.sleep(0.25)
-                        user = ttt.O
-                        ai = ttt.X
-                        player_shape_triangle = False
-
-                grid_size = 4
-                available_space = min(width * 0.8, height * 0.7)
-                tile_size = available_space / grid_size
-
-                board_width = tile_size * grid_size
-                board_height = tile_size * grid_size
-                board_left = (width - board_width) / 2
-                board_top = (height - board_height) / 2 + height * 0.05
-
-                tile_origin = (board_left, board_top)
-
-                tiles = []
-                for i in range(grid_size):
-                    row = []
-                    for j in range(grid_size):
-                        rect = pygame.Rect(tile_origin[0] + j * tile_size, tile_origin[1] + i * tile_size,
-                                           tile_size, tile_size)
-
-                        grad_surf = pygame.Surface((rect.width, rect.height))
-                        for y in range(rect.height):
-                            grad = int(255 - (y / rect.height) * 20)
-                            pygame.draw.line(grad_surf, (grad, grad, grad), (0, y), (rect.width, y))
-                        grad_surf.set_alpha(230)
-                        screen.blit(grad_surf, rect.topleft)
-
-                        pygame.draw.rect(screen, tile_border_color, rect, 3, border_radius=12)
-                        inner_shadow = pygame.Rect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8)
-                        pygame.draw.rect(screen, tile_inner_shadow, inner_shadow, 2, border_radius=12)
-
-                        if board[i][j] != ttt.EMPTY:
-                            draw_move(screen, rect, board[i][j])
-
-                        row.append(rect)
-                    tiles.append(row)
-
-                game_over = ttt.terminal(board)
-                player_turn = ttt.player(board)
-
-                panel_height = height * 0.15
-                panel_rect = pygame.Rect(0, 0, width, panel_height)
-                draw_shadow(screen, panel_rect, radius=15, offset=(5, 5), shadow_color=(0, 0, 0, 70))
-                draw_rounded_rect(screen, panel_rect, panel_color, radius=15)
-                pygame.draw.line(screen, tile_border_color, (0, panel_height), (width, panel_height), 2)
-
-                if game_over and winning_line is None:
-                    winner_symbol = ttt.winner(board)
-                    winning_line = get_winning_line(board)
-                    if winner_symbol == user:
-                        winner_player = user_name
-                        player_wins += 1
-                    elif winner_symbol is not None:
-                        winner_player = "AI"
-                        ai_wins += 1
-                    else:
-                        winner_player = None
-                        ties += 1
-
-                if game_over:
-                    status_text = "It's a Tie!" if winner_player is None else f"{winner_player} Wins!"
-                elif user == player_turn:
-                    status_text = f"{user_name}, it's your move!"
-                else:
-                    status_text = "AI is thinking..."
-
-                status_shadow = mediumFont.render(status_text, True, (0, 0, 0, 150))
-                status_rect = status_shadow.get_rect(center=(width / 2 + 2, panel_height / 2 - 8))
-                screen.blit(status_shadow, status_rect)
-
-                status_render = mediumFont.render(status_text, True, text_color)
-                status_rect = status_render.get_rect(center=(width / 2, panel_height / 2 - 10))
-                screen.blit(status_render, status_rect)
-
-                diff_text = smallFont.render(f"Challenge Level: {difficulty.capitalize()}", True, text_color)
-                diff_rect = diff_text.get_rect(center=(width / 2, panel_height - 20))
-                screen.blit(diff_text, diff_rect)
-
-                if winning_line is not None:
-                    if animation_progress < 1:
-                        animation_progress += 0.05
-                    draw_winning_line(screen, winning_line[0], winning_line[1], tiles, animation_progress)
-
-                # AI Move logic: AI acts only when it's AI's turn, game not over, and delay is over
-                if user != player_turn and not game_over:
-                    if ai_turn:
-                        # Small delay for AI thinking
-                        time.sleep(0.5)
-                        move = ttt.minimax(board, difficulty, maximizing_player=ai)
-                        if move is not None:
-                            board = ttt.result(board, move)
+                        # Keep user_name and shape; reset difficulty and board for new game
+                        input_active = False
+                        difficulty = None  # Force difficulty re-selection
+                        board = ttt.initial_state()
                         ai_turn = False
-                    else:
-                        ai_turn = True
-
-                if click == 1 and user == player_turn and not game_over:
-                    mouse = pygame.mouse.get_pos()
-                    for i in range(grid_size):
-                        for j in range(grid_size):
-                            if board[i][j] == ttt.EMPTY and tiles[i][j].collidepoint(mouse):
-                                board = ttt.result(board, (i, j))
-                                # Reset AI turn to allow AI to move next
-                                ai_turn = False
-
-                if game_over:
-                    panel_bottom_height = height * 0.15
-                    panel_bottom_rect = pygame.Rect(0, height - panel_bottom_height, width, panel_bottom_height)
-                    draw_shadow(screen, panel_bottom_rect, radius=15, offset=(5, 5), shadow_color=(0, 0, 0, 70))
-                    draw_rounded_rect(screen, panel_bottom_rect, panel_color, radius=15)
-                    pygame.draw.line(screen, tile_border_color, (0, height - panel_bottom_height), (width, height - panel_bottom_height), 2)
-
-                    button_width = width / 4
-                    button_height = height * 0.07
-                    button_y = height - panel_bottom_height / 2 - button_height / 2
-
-                    againButton = pygame.Rect(width / 5, button_y, button_width, button_height)
-                    hover_retry = againButton.collidepoint(mouse_pos)
-                    draw_button(screen, againButton, "Play Again", mediumFont, button_base, hover_retry, False)
-
-                    quitButton = pygame.Rect(3 * (width / 5), button_y, button_width, button_height)
-                    hover_quit = quitButton.collidepoint(mouse_pos)
-                    draw_button(screen, quitButton, "Exit", mediumFont, button_base, hover_quit, False)
-
-                    if click == 1:
-                        if againButton.collidepoint(mouse_pos):
-                            time.sleep(0.25)
-                            user_name = ""
-                            input_active = True
-                            difficulty = None
-                            board = ttt.initial_state()
-                            ai_turn = False
-                            animation_progress = 0
-                            winning_line = None
-                            winner_player = None
-                            settings_open = False
-                        elif quitButton.collidepoint(mouse_pos):
-                            pygame.quit()
-                            sys.exit()
+                        animation_progress = 0
+                        winning_line = None
+                        winner_player = None
+                        settings_open = False
+                        result_counted = False  # Reset flag here too
+                    elif quitButton.collidepoint(mouse_pos):
+                        pygame.quit()
+                        sys.exit()
 
     pygame.display.flip()
