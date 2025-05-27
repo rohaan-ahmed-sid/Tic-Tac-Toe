@@ -6,20 +6,16 @@ X = "X"
 O = "O"
 EMPTY = None
 
-
 def initial_state():
     return [[EMPTY for _ in range(4)] for _ in range(4)]
-
 
 def player(board):
     x_count = sum(row.count(X) for row in board)
     o_count = sum(row.count(O) for row in board)
     return X if x_count == o_count else O
 
-
 def actions(board):
     return {(i, j) for i in range(4) for j in range(4) if board[i][j] == EMPTY}
-
 
 def result(board, action):
     i, j = action
@@ -28,7 +24,6 @@ def result(board, action):
     new_board = copy.deepcopy(board)
     new_board[i][j] = player(board)
     return new_board
-
 
 def winner(board):
     for row in board:
@@ -48,57 +43,59 @@ def winner(board):
 
     return None
 
-
 def terminal(board):
     return winner(board) is not None or all(EMPTY not in row for row in board)
 
-
-def utility(board):
+def utility(board, maximizing_player):
     w = winner(board)
-    return 1 if w == X else -1 if w == O else 0
+    if w == maximizing_player:
+        return 1
+    elif w is None:
+        return 0
+    else:
+        return -1
 
-
-def minimax(board, difficulty="medium"):
+def minimax(board, difficulty="medium", maximizing_player=None):
     """
     Returns the optimal action for the current player on the board.
     Difficulty levels:
-    - easy: Makes random moves with 70% probability, otherwise makes optimal moves with depth limit 1
-    - medium: Makes optimal moves with depth limit 2
-    - hard: Makes optimal moves with depth limit 4
+    - easy: 70% random moves, 30% smart moves (depth limit 1)
+    - medium: optimal moves with depth limit 2
+    - hard: optimal moves with depth limit 4
     """
     if terminal(board):
         return None
 
     current_player = player(board)
     available_actions = list(actions(board))
-    
-    # Easy difficulty: 70% random moves, 30% smart moves with depth 1
+
+    if maximizing_player is None:
+        maximizing_player = current_player  # default maximizing player is current player
+
     if difficulty == "easy":
         if random.random() < 0.7:
             return random.choice(available_actions)
         depth_limit = 1
-    # Medium difficulty: optimal moves with depth 2
     elif difficulty == "medium":
         depth_limit = 2
-    # Hard difficulty: optimal moves with depth 4
-    else: 
+    else:
         depth_limit = 4
 
-    if current_player == X:
-        value, best_action = max_value(board, -math.inf, math.inf, depth_limit)
+    if current_player == maximizing_player:
+        value, best_action = max_value(board, -math.inf, math.inf, depth_limit, maximizing_player)
     else:
-        value, best_action = min_value(board, -math.inf, math.inf, depth_limit)
+        value, best_action = min_value(board, -math.inf, math.inf, depth_limit, maximizing_player)
 
     return best_action
 
-def max_value(board, alpha, beta, depth):
+def max_value(board, alpha, beta, depth, maximizing_player):
     if terminal(board) or depth == 0:
-        return utility(board), None
+        return utility(board, maximizing_player), None
 
     max_eval = -math.inf
     best_action = None
     for action in actions(board):
-        eval, _ = min_value(result(board, action), alpha, beta, depth - 1)
+        eval, _ = min_value(result(board, action), alpha, beta, depth - 1, maximizing_player)
         if eval > max_eval:
             max_eval = eval
             best_action = action
@@ -108,15 +105,14 @@ def max_value(board, alpha, beta, depth):
 
     return max_eval, best_action
 
-
-def min_value(board, alpha, beta, depth):
+def min_value(board, alpha, beta, depth, maximizing_player):
     if terminal(board) or depth == 0:
-        return utility(board), None
+        return utility(board, maximizing_player), None
 
     min_eval = math.inf
     best_action = None
     for action in actions(board):
-        eval, _ = max_value(result(board, action), alpha, beta, depth - 1)
+        eval, _ = max_value(result(board, action), alpha, beta, depth - 1, maximizing_player)
         if eval < min_eval:
             min_eval = eval
             best_action = action
